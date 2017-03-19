@@ -210,6 +210,14 @@ while IFS= read -u 3 -r -d '' conflict; do
     fi
 done 3< <(cmd)
 
+merge() {
+    local f
+    f="${1:?}"
+
+    original_file="${f/.sync-conflict-????????-??????/}"
+    vim -d "$f" "$original_file"
+}
+
 # Print warning if files have been ignored and delete them if
 # specified.
 if [ ! ${#ignored[@]} -eq 0 ]
@@ -225,10 +233,11 @@ then
                 for f in "${ignored[@]}"
                 do
                     msg "Ignored file: %s" "$f"
-                    ask "(R)emove, (S)kip, (Q)uit: [r/s/q] "
+                    ask "(M)erge, (R)emove, (S)kip, (Q)uit: [r/s/q] "
                     # shellcheck disable=SC2162
                     while read ci; do
                         case "$ci" in
+                            m|M) merge "$f" ;;
                             q|Q) exit 0 ;;
                             s|S) break ;;
                             r|R) plain "$(rm -v "$f")"; break ;;
@@ -236,6 +245,7 @@ then
                         esac
                     done
                 done
+                break
                 ;;
             r|R) (( ${#ignored[@]} )) && plain "$(rm -v "${ignored[@]}")"; break ;;
             *) ask "Invalid answer.  Try again: [d/q] "; continue ;;
@@ -251,12 +261,13 @@ then
     for f in "${nontext[@]}"
     do
         msg "Non-text file: %s" "$f"
-        ask "(R)emove, (S)kip, (Q)uit: [r/s/q] "
+        ask "(M)erge, (R)emove, (S)kip, (Q)uit: [r/s/q] "
         # shellcheck disable=SC2162
         while read c; do
             case "$c" in
                 q|Q) exit 0 ;;
                 s|S) break ;;
+                m|M) merge "$f" ;;
                 r|R) plain "$(rm -v "$f")"; break ;;
                 *) ask "Invalid answer.  Try again: [r/s/q] "; continue ;;
             esac
