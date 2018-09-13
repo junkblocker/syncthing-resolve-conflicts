@@ -99,7 +99,12 @@ version() {
 cmd() {
     case "$(uname -s)" in
         Darwin)
-            locate -0 sync-conflict;;
+            if [[ -r /var/db/locate.database ]]; then
+                locate -0 sync-conflict
+            else
+                mdfind -0 -onlyin / -name sync-conflict
+            fi
+            ;;
         *)
             locate -0 -e -b sync-conflict;;
     esac
@@ -152,6 +157,12 @@ fi
 while IFS= read -u 3 -r -d '' conflict; do
     [[ ! -e "$conflict" && ! -L "$conflict" && ! -d "$conflict" ]] && continue
 
+    # mdfind search is too lax
+    [[ $conflict != *.sync-conflict-* ]] && continue
+
+    # Ignore files already deleted
+    [[ $conflict == $HOME/.Trash/*.sync-conflict-* ]] && continue
+
     if (( OUTPUTONLY )); then
         echo "$conflict"
         continue
@@ -180,7 +191,7 @@ while IFS= read -u 3 -r -d '' conflict; do
     fi
 
     # Original filename. TODO: Improve pattern match (digits only).
-    file="${conflict/.sync-conflict-????????-??????-???????/}"
+    file="${conflict//.sync-conflict-????????-??????-???????/}"
     # Handle sync conflict.
     msg  "Sync conflict: %s" "$conflict"
     msg2 "Original file: %s" "$file"
@@ -218,7 +229,7 @@ merge() {
     local f
     f="${1:?}"
 
-    original_file="${f/.sync-conflict-????????-??????/}"
+    original_file="${f//.sync-conflict-????????-??????-???????/}"
     vim -d "$f" "$original_file"
 }
 
@@ -262,7 +273,7 @@ if [ ! ${#recursive[@]} -eq 0 ]
 then
     warning "Some recursive conflicts have been ignored."
     (( ${#recursive[@]} )) && msg "%s" "${recursive[@]}"
-    ask "(R)emove all ignored files, (A)sk for each file, (Q)uit: [r/q] "
+    ask "(M)erge all ignored files, (R)emove all ignored files, (A)sk for each file, (Q)uit: [r/q] "
     # shellcheck disable=SC2162
     while read c; do
         case "$c" in
@@ -271,16 +282,24 @@ then
                 for f in "${recursive[@]}"
                 do
                     msg "Ignored file: %s" "$f"
-                    ask "(R)emove, (S)kip, (Q)uit: [r/s/q] "
+                    ask "(M)erge, (R)emove, (S)kip, (Q)uit: [r/s/q] "
                     # shellcheck disable=SC2162
                     while read ci; do
                         case "$ci" in
                             q|Q) exit 0 ;;
                             s|S) break ;;
+                            m|M) merge "$f" ;;
                             r|R) plain "$(rm -v "$f")"; break ;;
                             *) ask "Invalid answer.  Try again: [r/s/q] "; continue ;;
                         esac
                     done
+                done
+                ;;
+            m|M)
+                for f in "${recursive[@]}"
+                do
+                    msg "Ignored file: %s" "$f"
+                    merge "$f"
                 done
                 ;;
             r|R) (( ${#recursive[@]} )) && plain "$(rm -v "${recursive[@]}")"; break ;;
@@ -297,6 +316,7 @@ then
     for f in "${nontext[@]}"
     do
         msg "Non-text file: %s" "$f"
+        msg "Original file: ${f//.sync-conflict-????????-??????-???????/}"
         ask "(M)erge, (R)emove, (S)kip, (Q)uit: [r/s/q] "
         # shellcheck disable=SC2162
         while read c; do
